@@ -207,7 +207,7 @@ def main():
         canprog.logger.set_level(canprog.logger.logging.DEBUG)
     
     if params.interface == 'socketcan':
-        iface = can.interface.Bus(channel=params.name, bustype='socketcan_native')
+        iface = can.interface.Bus(channel=params.name, bustype='socketcan')
     
     datafile = file.FileManager()
     
