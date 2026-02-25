@@ -2,6 +2,7 @@
 # The MIT License (MIT)
 #
 # Copyright (c) 2017 Marcin Borowicz <marcinbor85@gmail.com>
+# Copyright (c) 2026 Stefan Riesenberger <stefan.riesenberger@inmox.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,12 +25,13 @@
 
 import can
 import struct
+import time
 
 from . import AbstractProtocol
 
 from canprog.logger import log
 
-PAGE_SIZE = 8
+PAGE_SIZE = 64
 
 CMD_GET_COMMANDS = 0x00
 CMD_GET_VERSION = 0x01
@@ -38,7 +40,7 @@ CMD_CHANGE_SPEED = 0x03
 CMD_READ_MEMORY = 0x11
 CMD_GO = 0x21
 CMD_WRITE_MEMORY = 0x31
-CMD_ERASE = 0x43
+CMD_ERASE = 0x44
 CMD_WRITE_PROTECT = 0x63
 CMD_WRITE_UNPROTECT = 0x73
 CMD_READOUT_PROTECT = 0x82
@@ -52,60 +54,13 @@ BYTE_NOACK = 0x1F
 BYTE_INIT = 0x79
 BYTE_DATA = 0x04
 
-CHIP_ID = { 0x440: "STM32F05xxx & STM32F030x8",
-            0x444: "STM32F03xx4/6",
-            0x442: "STM32F030xC",
-            0x445: "STM32F04xxx & STM32F070x6",
-            0x448: "STM32F070xB & STM32F071xx/072xx",
-            0x442: "STM32F09xxx",
-            
-            0x412: "STM32F10xxx Low-density",
-            0x410: "STM32F10xxx Medium-density",
-            0x414: "STM32F10xxx High-density",
-            0x420: "STM32F10xxx Medium-density VL",
-            0x428: "STM32F10xxx High-density VL",
-            0x418: "STM32F105xx/107xx",
-            0x430: "STM32F10xxx XL-density",
-            
-            0x411: "STM32F2xxxx",
-            
-            0x432: "STM32F373xx & STM32F378xx",
-            0x422: "STM32F302xB(C)/303xB(C) & STM32F358xx",
-            0x439: "STM32F301xx/302x4(6/8) & STM32F318xx",
-            0x438: "STM32F303x4(6/8)/334xx/328xx",
-            0x446: "STM32F302xD(E)/303xD(E) & STM32F398xx",
-            
-            0x413: "STM32F40xxx/41xxx",
-            0x419: "STM32F42xxx/43xxx",
-            0x423: "STM32F401xB(C)",
-            0x433: "STM32F401xD(E)",
-            0x458: "STM32F410xx",
-            0x431: "STM32F411xx",
-            0x441: "STM32F412xx",
-            0x421: "STM32F446xx",
-            0x434: "STM32F469xx/479xx",
-            0x463: "STM32F413xx/423xx",
-            
-            0x452: "STM32F72xxx/73xxx",
-            0x449: "STM32F74xxx/75xxx",
-            0x451: "STM32F76xxx/77xxx",
-            
-            0x450: "STM32H74xxx/75xxx",
-            
-            0x457: "STM32L01xxx/02xxx",
-            0x425: "STM32L031xx/041xx",
-            0x417: "STM32L05xxx/06xxx",
-            0x447: "STM32L07xxx/08xxx",
-            0x416: "STM32L1xxx6(8/B)",
-            0x429: "STM32L1xxx6(8/B)A",
-            0x427: "STM32L1xxxC",
-            0x436: "STM32L1xxxD",
-            0x437: "STM32L1xxxE",
-            
-            0x435: "STM32L43xxx/44xxx",
-            0x462: "STM32L45xxx/46xxx",
-            0x415: "STM32L47xxx/48xxx",
-            0x461: "STM32L496xx/4A6xx",} 
+BOOTLOADER_DETECTION_ID = 0x011
+BOOTLOADER_DETECTION_DATA = 0xA5
+BOOTLOADER_DETECTION_LENGTH = 1
+
+CHIP_ID = {             
+            0x474: "STM32H5XXX",
+            0x480: "STM32H7xxx",} 
 
 def _check_support(cmd):
     def func_wrapper(function):
@@ -118,10 +73,11 @@ def _check_support(cmd):
         return call_wrapper
     return func_wrapper
 
-class STM32Protocol(AbstractProtocol):
+class STM32ProtocolFD(AbstractProtocol):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        log.info('using protocol')
         self._supported_commands = {  CMD_GET_COMMANDS: {'name': 'GET', 'support': False},
                                       CMD_GET_VERSION: {'name': 'GET_VERSION', 'support': False},
                                       CMD_GET_ID: {'name': 'GET_ID', 'support': False},
@@ -163,14 +119,14 @@ class STM32Protocol(AbstractProtocol):
         self._recv(timeout=timeout, checker=self._check_ack(cmd))
         
     def _send_data(self, cmd, data=[]):
-        self._send(can.Message(arbitration_id=cmd, data=data, is_extended_id=False))
+        self._send(can.Message(arbitration_id=cmd, data=data, is_fd=True, bitrate_switch=True, is_extended_id=False))
     
     def _init(self):
-        self._send_data(BYTE_INIT)
-        self._recv(checker=self._check_ack_or_noack(BYTE_INIT))
+        self._send_data(BOOTLOADER_DETECTION_ID, data=[BOOTLOADER_DETECTION_DATA])
+        self._recv(timeout=0.6, checker=self._check_ack_or_noack(BOOTLOADER_DETECTION_ID))
         
     def _recv_data(self, cmd, size=None):
-        msg = self._recv(checker=self._check_response(cmd, size))
+        msg = self._recv(timeout=0.6 ,checker=self._check_response(cmd, size))
         return msg.data
         
     def _get_commands(self):
@@ -275,7 +231,7 @@ class STM32Protocol(AbstractProtocol):
         self._wait_ack(CMD_READOUT_UNPROTECT, MASSERASE_MAX_TIMEOUT)
         
     def _erase_page(self, p):
-        self._send_data(CMD_ERASE, (p,))        
+        self._send_data(CMD_ERASE, p)        
         self._wait_for_ack(CMD_ERASE)
         self._wait_ack(CMD_ERASE, MASSERASE_MAX_TIMEOUT)
                     
@@ -283,8 +239,9 @@ class STM32Protocol(AbstractProtocol):
     def _erase(self, pages):
         if len(pages) == 0:
             log.info('Mass erasing. Please wait..')
-            self._erase_page(0xFF);
+            self._erase_page([0xFF,0xFF]);
         else:
+            # TODO check if partial erase is same as in CAN mode
             for p in pages:
                 log.info('Erasing sector {:02X}'.format(p))
                 self._send_data(CMD_ERASE, (0,))        
@@ -307,13 +264,10 @@ class STM32Protocol(AbstractProtocol):
     
     def _write_page(self, address, data):
         size = len(data)
-        self._send_data(CMD_WRITE_MEMORY, struct.pack(">IB", address, size - 1))        
+        self._send_data(CMD_WRITE_MEMORY, struct.pack(">IB", address, size - 1))       
         self._wait_for_ack(CMD_WRITE_MEMORY)
-        
-        for i in range(0, size, 8):
-            self._send_data(BYTE_DATA, data[i:i+8])      
-            self._wait_for_ack(CMD_WRITE_MEMORY)
-        
+        for i in range(0, size, PAGE_SIZE):
+            self._send_data(BYTE_DATA, data[i:i+PAGE_SIZE])
         self._wait_for_ack(CMD_WRITE_MEMORY)        
         
     @_check_support(CMD_READ_MEMORY)  
@@ -345,7 +299,7 @@ class STM32Protocol(AbstractProtocol):
         self._wait_for_ack(CMD_READ_MEMORY)
         
         page = bytearray()
-        for _ in range(0, size, 8):
+        for _ in range(0, size, PAGE_SIZE):
             data = self._recv_data(CMD_READ_MEMORY)
             page += data
         

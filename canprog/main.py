@@ -27,6 +27,7 @@
 import argparse
 import can
 import sys
+import math
 
 from canprog import __version__, __appname__, __description__
 from canprog import protocols
@@ -162,8 +163,10 @@ def verify(protocol, address, data):
     try:
         log.info('Verifying memory at 0x{address:08X}:{size}'.format(address=address, size=len(data)))
         data_readed = protocol.read(address, len(data))
-        if len(data_readed) != len(data):
-            raise ValueError('Size mismatch {} != {}'.format(len(data_readed),len(data)))
+        read_pages = len(data_readed)/protocol.page_size
+        data_pages = math.ceil(len(data)/protocol.page_size)
+        if read_pages != data_pages:
+            raise ValueError('Size mismatch exceeding page {} != {}'.format(len(data_readed),len(data)))
         for (a, b), i in zip(zip(data_readed, data), range(address, address+len(data))):
             if a != b:
                 raise ValueError('Mismatch at 0x{address:08X} 0x{:02X}!=0x{:02X}'.format(a, b, address=i))
@@ -198,7 +201,6 @@ def speed(protocol, bps):
         raise ConnectionError('Writing error: '+str(e))
 
 def main():
-    
     parser = config_parser()
     
     params = parser.parse_args()
@@ -207,11 +209,11 @@ def main():
         canprog.logger.set_level(canprog.logger.logging.DEBUG)
     
     if params.interface == 'socketcan':
-        with can.interface.Bus(channel=params.name, 
-                interface="socketcan",
-                bitrate=500000,
-                ignore_config=True,
-            ) as iface:
+        with can.Bus(
+            interface='socketcan',
+            channel='can0',
+            fd=True,  # Enable CAN FD mode
+        ) as iface:
     
             datafile = file.FileManager()
             

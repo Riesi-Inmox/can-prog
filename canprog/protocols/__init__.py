@@ -24,10 +24,10 @@
 
 from .abstract import AbstractProtocol
 
-from . import stm32
+from . import stm32_fd
 
 def get_protocol_class_by_name(name):
     if name == 'stm32':
-        return stm32.STM32Protocol
+        return stm32_fd.STM32ProtocolFD
     else:
         raise NotImplementedError('unknown protocol type')
