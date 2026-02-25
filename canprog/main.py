@@ -207,53 +207,57 @@ def main():
         canprog.logger.set_level(canprog.logger.logging.DEBUG)
     
     if params.interface == 'socketcan':
-        iface = can.interface.Bus(channel=params.name, bustype='socketcan')
+        with can.interface.Bus(channel=params.name, 
+                interface="socketcan",
+                bitrate=500000,
+                ignore_config=True,
+            ) as iface:
     
-    datafile = file.FileManager()
-    
-    protocol_class = protocols.get_protocol_class_by_name(params.protocol)
-    protocol = protocol_class(iface)
-    
-    try:
-        connect(protocol)
-        
-        if params.command == 'go':
-            go(protocol, params.address)
-        elif params.command == 'erase':
-            erase(protocol, params.pages)
-        elif params.command == 'write':
-            if params.erase:
-                erase(protocol, params.pages)
+            datafile = file.FileManager()
             
-            datafile.load(params.input, params.format, params.address)
-            for address, data in datafile.get_segments():
-                write(protocol, address, data)
+            protocol_class = protocols.get_protocol_class_by_name(params.protocol)
+            protocol = protocol_class(iface)
+            
+            try:
+                connect(protocol)
                 
-            if params.verify:
-                for address, data in datafile.get_segments():
-                    verify(protocol, address, data)
+                if params.command == 'go':
+                    go(protocol, params.address)
+                elif params.command == 'erase':
+                    erase(protocol, params.pages)
+                elif params.command == 'write':
+                    if params.erase:
+                        erase(protocol, params.pages)
+                    
+                    datafile.load(params.input, params.format, params.address)
+                    for address, data in datafile.get_segments():
+                        write(protocol, address, data)
                         
-            if params.go:
-                go(protocol, params.address)
-        elif params.command == 'read':
-            data = read(protocol, params.address, params.size)            
-            datafile.set_segment(params.address, data)
-            datafile.save(params.output, params.format)    
-        elif params.command == 'lock':
-            lock(protocol)
-        elif params.command == 'unlock':
-            unlock(protocol)            
-        elif params.command == 'speed':
-            speed(protocol, params.bps)
-        else:
-            log.info('Nothing to do...')
-        
-        disconnect(protocol)
-        sys.exit(0)
-    except ValueError as e:
-        log.error(e)
-    except ConnectionError as e:
-        log.error(e)
+                    if params.verify:
+                        for address, data in datafile.get_segments():
+                            verify(protocol, address, data)
+                                
+                    if params.go:
+                        go(protocol, params.address)
+                elif params.command == 'read':
+                    data = read(protocol, params.address, params.size)            
+                    datafile.set_segment(params.address, data)
+                    datafile.save(params.output, params.format)    
+                elif params.command == 'lock':
+                    lock(protocol)
+                elif params.command == 'unlock':
+                    unlock(protocol)            
+                elif params.command == 'speed':
+                    speed(protocol, params.bps)
+                else:
+                    log.info('Nothing to do...')
+                
+                disconnect(protocol)
+                sys.exit(0)
+            except ValueError as e:
+                log.error(e)
+            except ConnectionError as e:
+                log.error(e)
 
 if __name__ == '__main__':
     main()
