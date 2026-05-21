@@ -1,3 +1,6 @@
+# Disclaimer
+This is hardcoded to use the canfd path and was only tested on the h503 nucleo board
+
 # canprog
 
 Command-line tool to flashing devices by CAN-BUS.
